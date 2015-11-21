@@ -102,7 +102,7 @@ checkconfig() {
       USEN=0
       ;;
   esac
-  
+
   case "${BARCHART,,}" in
     y|yes|true|t|on|1|enabled|enable|use)
       USEB=1
@@ -130,7 +130,7 @@ checkconfig() {
 refreshcurvol() {
   # this worked some versions of PA 4 but is no longer valid with v5
   # CURVOL=$(pacmd list-sinks|grep -A 15 '* index'| awk '/base volume: /{ print $5 }'|sed 's/%//')
-  [[ $PCV -eq 0 ]] && 
+  [[ $PCV -eq 0 ]] &&
   CURVOL=$(pacmd list-sinks|grep -A 15 '* index'| awk '/volume: /{ print $3 }' | grep -m 1 % |sed 's/[%|,]//g') ||
     CURVOL=$(pacmd list-sinks|grep -A 15 '* index'| awk '/volume: front/{ print $5 }' | sed 's/[%|,]//g')
 }
@@ -154,7 +154,7 @@ setup() {
   SOURCE=$(pacmd list-sources|awk '/\* index:/{ print $3 }')
   MUTED=$(pacmd list-sinks|grep -A 15 '* index'|awk '/muted:/{ print $2 }')
   SOURCE_MUTED=$(pacmd list-sources|grep -A 15 '* index'|awk '/muted:/{ print $2 }')
-  
+
   refreshcurvol # sets CURVOL ahead of integer check
 
   # check that extracted vars are integers
@@ -167,6 +167,12 @@ setup() {
       return 0
     fi
   done
+
+  # check that /tmp/pulseaudio-ctl exists and write a value into them (else it fails)
+  if [ ! -f /tmp/pulseaudio-ctl-vol ]; then
+      echo 0 > /tmp/pulseaudio-ctl-vol
+      echo 0 > /tmp/pulseaudio-ctl-mute
+  fi
 }
 
 kde_osd() {
@@ -179,9 +185,9 @@ kde_osd_mic() {
 
 checkconfig
 setup
-# checks if exist a valid $2 
+# checks if exist a valid $2
 PERC=5
-[[ -n "$2" ]] && [[ $(is_integer "${2%%%}") == '1' ]] && PERC=${2%%%} 
+[[ -n "$2" ]] && [[ $(is_integer "${2%%%}") == '1' ]] && PERC=${2%%%}
 
 case "$1" in
   U|u|[U,u]p)
@@ -196,10 +202,11 @@ case "$1" in
 
     refreshcurvol
     refreshbarvolperc
+    idvol=$(head -n1 /tmp/pulseaudio-ctl-vol)
     if [[ $USEN -eq 1 ]]; then
       [[ $USEB -eq 1 ]] &&
-        notify-send -t 1000 -i multimedia-volume-control --hint=int:transient:1 --hint=int:value:$UPPER_THRESHOLD_AWARE_VOL --hint=string:synchronous:volume "Volume up $PERC %" "" ||
-        notify-send -t 1000 --hint=int:transient:1 "Volume up $PERC%" "Current is $CURVOL %" --icon=multimedia-volume-control
+        dunstify -p -r $idvol -t 1000 -i multimedia-volume-control --hints=int:transient:1 --hints=int:value:$UPPER_THRESHOLD_AWARE_VOL --hints=string:synchronous:volume "Volume up $PERC %" "" > /tmp/pulseaudio-ctl-vol ||
+        dunstify -p -r $idvol -t 1000 --hints=int:transient:1 "Volume up $PERC%" "Current is $CURVOL %" --icon=multimedia-volume-control > /tmp/pulseaudio-ctl-vol
     fi
     [[ $USEK -eq 1 ]] &&
       kde_osd $CURVOL
@@ -214,20 +221,22 @@ case "$1" in
       esac
     refreshcurvol
     refreshbarvolperc
+    idvol=$(head -n1 /tmp/pulseaudio-ctl-vol)
     if [[ $USEN -eq 1 ]]; then
       [[ $USEB -eq 1 ]] &&
-        notify-send -t 1000 -i multimedia-volume-control --hint=int:transient:1 --hint=int:value:$UPPER_THRESHOLD_AWARE_VOL --hint=string:synchronous:volume "Volume down $PERC %" "" ||
-        notify-send -t 1000 --hint=int:transient:1 "Volume down $PERC%" "Current is $CURVOL %" --icon=multimedia-volume-control
+        dunstify -p -r $idvol -t 1000 -i multimedia-volume-control --hints=int:transient:1 --hints=int:value:$UPPER_THRESHOLD_AWARE_VOL --hints=string:synchronous:volume "Volume down $PERC %" "" > /tmp/pulseaudio-ctl-vol ||
+        dunstify -p -r $idvol -t 1000 --hints=int:transient:1 "Volume down $PERC%" "Current is $CURVOL %" --icon=multimedia-volume-control > /tmp/pulseaudio-ctl-vol
     fi
     [[ $USEK -eq 1 ]] &&
       kde_osd $CURVOL
     ;;
   M|m|[M,m]u|[M,m]ute)
     # mutes the volume entirely
+    idmute=$(head -n1 /tmp/pulseaudio-ctl-mute)
     pactl set-sink-mute "$SINK" toggle
     MUTED=$(pacmd list-sinks|grep -A 15 '* index'|awk '/muted:/{ print $2 }')
     [[ $USEN -eq 1 ]] &&
-      notify-send -t 1000 --hint=int:transient:1 "Mute toggle" "Muted: $MUTED" --icon=audio-volume-muted
+      dunstify -p -r $idmute -t 1000 --hints=int:transient:1 "Mute toggle" "Muted: $MUTED" --icon=audio-volume-muted > /tmp/pulseaudio-ctl-mute
     if [[ $USEK -eq 1 ]]; then
       if [[ $MUTED == "yes" ]]; then
         kde_osd 0
@@ -239,10 +248,11 @@ case "$1" in
     ;;
   [M,m]i|[M,m]ute-[I,i]nput)
     # mutes the microphone entirely
+    idmute=$(head -n1 /tmp/pulseaudio-ctl-mute)
     pactl set-source-mute "$SOURCE" toggle
     SOURCE_MUTED=$(pacmd list-sources|grep -A 15 '* index'|awk '/muted:/{ print $2 }')
     [[ $USEN -eq 1 ]] &&
-      notify-send -t 1000 --hint=int:transient:1 "Mute toggle" "Muted: $SOURCE_MUTED" --icon=audio-volume-muted
+      dunstify -p -r $idmute -t 1000 --hints=int:transient:1 "Mute toggle" "Muted: $SOURCE_MUTED" --icon=audio-volume-muted > /tmp/pulseaudio-ctl-mute
     if [[ $USEK -eq 1 ]]; then
       if [[ $SOURCE_MUTED == "yes" ]]; then
         kde_osd_mic 0
@@ -262,7 +272,7 @@ case "$1" in
       esac
     refreshcurvol
     [[ $USEN -eq 1 ]] &&
-      notify-send -t 1000 --hint=int:transient:1 "Volume set" "Level: $CURVOL" --icon=multimedia-volume-control
+      dunstify -p -r $idvol -t 1000 --hints=int:transient:1 "Volume set" "Level: $CURVOL" --icon=multimedia-volume-control
     [[ $USEK -eq 1 ]] &&
       kde_osd $CURVOL
     ;;
@@ -277,7 +287,7 @@ case "$1" in
       esac
     refreshcurvol
     [[ $USEN -eq 1 ]] &&
-      notify-send -t 1000 --hint=int:transient:1 "Atmost set" "Level: $CURVOL" --icon=multimedia-volume-control
+      dunstify -p -r $idvol -t 1000 --hints=int:transient:1 "Atmost set" "Level: $CURVOL" --icon=multimedia-volume-control
     [[ $USEK -eq 1 ]] &&
       kde_osd $CURVOL
     ;;
@@ -293,7 +303,7 @@ case "$1" in
   *)
     # send to notify-send if enabled
     [[ $USEN -eq 1 ]] &&
-      notify-send -t 8000 --hint=int:transient:1 "Pulseaudio Settings" "Volume level     : $CURVOL %\nIs sink muted    : $MUTED\nIs source muted  : $SOURCE_MUTED\nDetected sink    : $SINK\nDetected source  : $SOURCE\nPulse version    : $PAVERSION" --icon=multimedia-volume-control
+      dunstify -p -r $idvol -t 8000 --hints=int:transient:1 "Pulseaudio Settings" "Volume level     : $CURVOL %\nIs sink muted    : $MUTED\nIs source muted  : $SOURCE_MUTED\nDetected sink    : $SINK\nDetected source  : $SOURCE\nPulse version    : $PAVERSION" --icon=multimedia-volume-control
     # add pretty colors for mute status for CLI only
     [[ "$MUTED" = "yes" ]] && MUTED="${NRM}${RED}$MUTED${NRM}" ||
       MUTED="${NRM}${GRN}$MUTED${NRM}"
